@@ -1,0 +1,37 @@
+# =============================================================================
+# Podcast Knowledge Extractor — Python Dependencies
+# Python 3.12+ required
+# =============================================================================
+
+# --- Phase 1: Ingestion ---
+feedparser>=6.0
+httpx[http2]>=0.27
+tqdm>=4.66
+
+# --- Phase 2: Transcription ---
+# OpenAI Whisper (original reference implementation)
+openai-whisper>=20240930
+# faster-whisper (CTranslate2-based, ~4x faster)
+faster-whisper>=1.1
+
+# --- Phase 3: Speaker Diarization ---
+# WhisperX (transcription + alignment + diarization pipeline)
+# Note: install separately if pip conflicts arise:
+#   pip install git+https://github.com/m-bain/whisperX.git
+whisperx>=3.1
+pyannote.audio>=3.3
+
+# --- Phase 4: Indexing & Vector Store ---
+chromadb>=0.5
+sentence-transformers>=3.3
+rank-bm25>=0.2
+
+# --- Phase 5: Q&A Interface ---
+langchain>=0.3
+langchain-community>=0.3
+langchain-ollama>=0.3
+streamlit>=1.40
+
+# --- Dev Tools ---
+pytest>=8.0
+ruff>=0.8

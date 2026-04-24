@@ -1,0 +1,29 @@
+# Audio files
+data/audio/*.mp3
+data/audio/*.wav
+data/audio/*.m4a
+
+# Transcripts
+data/transcripts/*.json
+
+# Vector store
+data/chroma/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# Virtual environment
+.venv/
+
+# Environment
+.env
+
+# OS
+.DS_Store
+
+.claude
+
