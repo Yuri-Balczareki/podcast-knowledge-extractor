@@ -1,5 +1,6 @@
 # Podcast Knowledge Extractor — Tech Stack
 
+  python src/transcribe.py "data/audio/NerdCast 1025 - Devoradores de Estrelas_ Rocky e Grace Salvam o Cinema.mp3" --engine whisper.cpp --model large --language pt
 > Technology choices for a fully local, Apple Silicon-optimized podcast knowledge extraction pipeline.
 
 ## Core Language
@@ -24,6 +25,7 @@
 | Tool | Purpose | Why |
 |------|---------|-----|
 | **faster-whisper** | Speech-to-text | 4x faster than OpenAI Whisper via CTranslate2, same accuracy. On Apple Silicon: `compute_type="float16"` with `device="cpu"` (CTranslate2 CPU is performant on M-series; MPS support is experimental) |
+| **whisper.cpp** (pywhispercpp) | Speech-to-text | GGML-based C++ inference with native Metal GPU acceleration on Apple Silicon. Fastest engine for Mac hardware |
 | **WhisperX** | Alignment + diarization | Wraps faster-whisper with forced phoneme alignment and pyannote.audio diarization in a single pipeline |
 | **pyannote.audio** | Speaker diarization & embeddings | State-of-the-art diarization; also produces speaker embeddings for cross-episode voice matching. Requires a free HuggingFace access token |
 | **FFmpeg** | Audio preprocessing | Required by Whisper for format conversion and resampling |
@@ -119,13 +121,14 @@ podcast-knowledge-extractor/
 ├── .gitignore
 └── README.md
 ```
-python src/transcribe.py "data/audio/NerdCast 1025 - Devoradores de Estrelas_ Rocky e Grace Salvam o Cinema.mp3" --language pt --model medium
+
 ---
 
 ## Apple Silicon Notes
 
 - **Ollama**: Full Metal GPU acceleration out of the box — no configuration needed
 - **faster-whisper**: CTranslate2 CPU backend is well-optimized for Apple Silicon's unified memory; MPS/CoreML backends are experimental
+- **whisper.cpp** (pywhispercpp): Native Metal GPU acceleration, compiled in automatically on Apple Silicon — no configuration needed. Fastest transcription engine for Mac hardware
 - **PyTorch** (used by pyannote.audio, sentence-transformers): MPS backend available via `device="mps"` — stable for inference, occasional issues with training
 - **ChromaDB**: CPU-only, performs well for local-scale datasets (thousands of documents)
 - **Memory**: `large-v3` Whisper model needs ~3GB RAM; LLM inference via Ollama will use 4-8GB depending on model size. 16GB+ Mac recommended

@@ -13,12 +13,10 @@ tqdm>=4.66
 openai-whisper>=20240930
 # faster-whisper (CTranslate2-based, ~4x faster)
 faster-whisper>=1.1
+# whisper.cpp (GGML-based, native Metal GPU on Apple Silicon)
+pywhispercpp>=1.4
 
 # --- Phase 3: Speaker Diarization ---
-# WhisperX (transcription + alignment + diarization pipeline)
-# Note: install separately if pip conflicts arise:
-#   pip install git+https://github.com/m-bain/whisperX.git
-whisperx>=3.1
 pyannote.audio>=3.3
 
 # --- Phase 4: Indexing & Vector Store ---
@@ -31,6 +29,9 @@ langchain>=0.3
 langchain-community>=0.3
 langchain-ollama>=0.3
 streamlit>=1.40
+
+# --- Benchmarking ---
+jiwer>=3.0
 
 # --- Dev Tools ---
 pytest>=8.0

@@ -1,17 +1,47 @@
-"""Transcribe audio files to text using OpenAI Whisper."""
+"""Transcribe audio files to text using OpenAI Whisper or faster-whisper."""
 
 import argparse
 import json
+import logging
+import os
+import platform
 import time
 from pathlib import Path
 
-import torch
-import whisper
+logger = logging.getLogger(__name__)
 
 TRANSCRIPTS_DIR = Path(__file__).resolve().parent.parent / "data" / "transcripts"
 
+MODEL_SIZES = [
+    "tiny", "tiny.en",
+    "base", "base.en",
+    "small", "small.en", "distil-small.en",
+    "medium", "medium.en", "distil-medium.en",
+    "large", "large-v1", "large-v2", "large-v3", "large-v3-turbo",
+    "turbo", "distil-large-v2", "distil-large-v3",
+]
 
-def get_device() -> str:
+COMPUTE_TYPES = ["float16", "float32", "int8", "int8_float16", "default"]
+
+ENGINES = ["faster-whisper", "openai-whisper", "whisper.cpp"]
+
+WHISPERCPP_MODEL_MAP = {
+    "large": "large-v3",
+    "turbo": "large-v3-turbo",
+}
+
+INITIAL_PROMPT = (
+    "Transcrição de podcast brasileiro de cultura pop. "
+    "Preserve nomes próprios, termos técnicos e palavras em inglês "
+    "exatamente como são falados. Exemplos: Alottoni, Azaghal, "
+    "NerdCast, Jovem Nerd, RPG, cosplay, anime, manga. "
+    "Ignore músicas e trilhas sonoras de fundo."
+)
+
+
+def _get_openai_whisper_device() -> str:
+    import torch
+
     if torch.backends.mps.is_available():
         return "mps"
     if torch.cuda.is_available():
@@ -19,21 +49,114 @@ def get_device() -> str:
     return "cpu"
 
 
-def transcribe(audio_path: str, model_size: str = "base", language: str | None = None) -> dict:
-    device = get_device()
-    print(f"Loading Whisper model '{model_size}' on {device}...")
+def _transcribe_openai_whisper(audio_path: str, model_size: str, language: str | None, initial_prompt: str | None = None) -> dict:
+    import torch
+    import whisper
+
+    device = _get_openai_whisper_device()
+    logger.info("Loading openai-whisper model '%s' on %s...", model_size, device)
     model = whisper.load_model(model_size, device=device)
 
-    print(f"Transcribing: {audio_path}")
+    logger.info("Transcribing: %s", audio_path)
     start = time.time()
+    result = model.transcribe(audio_path, language=language, verbose=True, initial_prompt=initial_prompt)
+    elapsed = time.time() - start
+    minutes, secs = divmod(int(elapsed), 60)
+    logger.info("Transcription completed in %dm%02ds", minutes, secs)
 
-    result = model.transcribe(audio_path, language=language, verbose=True)
+    return result
+
+
+def _transcribe_faster_whisper(
+    audio_path: str, model_size: str, language: str | None, compute_type: str, initial_prompt: str | None = None
+) -> dict:
+    from faster_whisper import WhisperModel
+
+    device = "cpu" if platform.system() == "Darwin" else "auto"
+    logger.info("Loading faster-whisper model '%s' on %s (compute_type=%s)...", model_size, device, compute_type)
+    model = WhisperModel(model_size, device=device, compute_type=compute_type)
+
+    logger.info("Transcribing: %s", audio_path)
+    start = time.time()
+    segments_iter, info = model.transcribe(audio_path, language=language, vad_filter=True, initial_prompt=initial_prompt)
+
+    segments = [{"start": s.start, "end": s.end, "text": s.text} for s in segments_iter]
+    full_text = " ".join(s["text"].strip() for s in segments)
 
     elapsed = time.time() - start
     minutes, secs = divmod(int(elapsed), 60)
-    print(f"\nTranscription completed in {minutes}m{secs:02d}s")
+    logger.info("Transcription completed in %dm%02ds (language=%s)", minutes, secs, info.language)
 
-    return result
+    return {"text": full_text, "segments": segments, "language": info.language}
+
+
+def _get_audio_duration(audio_path: str) -> float:
+    import subprocess
+
+    result = subprocess.run(
+        ["ffprobe", "-v", "quiet", "-show_entries", "format=duration", "-of", "csv=p=0", audio_path],
+        capture_output=True, text=True,
+    )
+    return float(result.stdout.strip())
+
+
+def _format_timestamp(seconds: float) -> str:
+    h, remainder = divmod(int(seconds), 3600)
+    m, s = divmod(remainder, 60)
+    if h > 0:
+        return f"{h}:{m:02d}:{s:02d}"
+    return f"{m:02d}:{s:02d}"
+
+
+def _transcribe_whisper_cpp(audio_path: str, model_size: str, language: str | None, initial_prompt: str | None = None) -> dict:
+    from pywhispercpp.model import Model
+
+    ggml_model = WHISPERCPP_MODEL_MAP.get(model_size, model_size)
+    n_threads = os.cpu_count() or 4
+    logger.info("Loading whisper.cpp model '%s' (n_threads=%d)...", ggml_model, n_threads)
+    model = Model(ggml_model, n_threads=n_threads, print_progress=False)
+
+    total_duration = _get_audio_duration(audio_path)
+    total_str = _format_timestamp(total_duration)
+
+    def on_segment(seg):
+        pos = seg.t1 / 100.0
+        logger.info("Progress: %s / %s", _format_timestamp(pos), total_str)
+
+    transcribe_kwargs = {}
+    if language:
+        transcribe_kwargs["language"] = language
+    if initial_prompt:
+        transcribe_kwargs["initial_prompt"] = initial_prompt
+
+    logger.info("Transcribing: %s (%s)", audio_path, total_str)
+    start = time.time()
+    raw_segments = model.transcribe(audio_path, new_segment_callback=on_segment, **transcribe_kwargs)
+
+    segments = [{"start": s.t0 / 100.0, "end": s.t1 / 100.0, "text": s.text} for s in raw_segments]
+    full_text = " ".join(s["text"].strip() for s in segments)
+
+    elapsed = time.time() - start
+    minutes, secs = divmod(int(elapsed), 60)
+    lang = language or "auto"
+    logger.info("Transcription completed in %dm%02ds (language=%s)", minutes, secs, lang)
+
+    return {"text": full_text, "segments": segments, "language": lang}
+
+
+def transcribe(
+    audio_path: str,
+    model_size: str = "base",
+    language: str | None = None,
+    engine: str = "faster-whisper",
+    compute_type: str = "float16",
+    initial_prompt: str | None = INITIAL_PROMPT,
+) -> dict:
+    if engine == "openai-whisper":
+        return _transcribe_openai_whisper(audio_path, model_size, language, initial_prompt=initial_prompt)
+    if engine == "whisper.cpp":
+        return _transcribe_whisper_cpp(audio_path, model_size, language, initial_prompt=initial_prompt)
+    return _transcribe_faster_whisper(audio_path, model_size, language, compute_type, initial_prompt=initial_prompt)
 
 
 def save_output(result: dict, audio_path: str) -> tuple[Path, Path]:
@@ -42,7 +165,7 @@ def save_output(result: dict, audio_path: str) -> tuple[Path, Path]:
 
     txt_path = TRANSCRIPTS_DIR / f"{stem}.txt"
     txt_path.write_text(result["text"].strip(), encoding="utf-8")
-    print(f"Saved text:     {txt_path}")
+    logger.info("Saved text:     %s", txt_path)
 
     json_path = TRANSCRIPTS_DIR / f"{stem}.json"
     segments = [
@@ -50,26 +173,33 @@ def save_output(result: dict, audio_path: str) -> tuple[Path, Path]:
         for s in result["segments"]
     ]
     json_path.write_text(json.dumps(segments, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"Saved segments: {json_path}")
+    logger.info("Saved segments: %s", json_path)
 
     return txt_path, json_path
 
 
 def main():
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+
     parser = argparse.ArgumentParser(description="Transcribe audio with Whisper")
     parser.add_argument("audio", help="Path to the audio file (mp3, wav, etc.)")
-    parser.add_argument("--model", default="base", choices=["tiny", "base", "small", "medium", "large"],
-                        help="Whisper model size (default: base)")
+    parser.add_argument("--engine", default="faster-whisper", choices=ENGINES, help="Whisper engine (default: faster-whisper)")
+    parser.add_argument("--model", default="base", choices=MODEL_SIZES, help="Whisper model size (default: base)")
+    parser.add_argument("--compute-type", default="float16", choices=COMPUTE_TYPES,
+                        help="Quantization type for faster-whisper (default: float16, ignored for openai-whisper and whisper.cpp)")
     parser.add_argument("--language", default=None, help="Force language (e.g. 'pt' for Portuguese)")
+    parser.add_argument("--initial-prompt", default=INITIAL_PROMPT, help="Initial prompt to guide transcription (default: Portuguese podcast prompt)")
+    parser.add_argument("--no-prompt", action="store_true", help="Disable initial prompt")
     args = parser.parse_args()
 
     if not Path(args.audio).exists():
-        print(f"File not found: {args.audio}")
+        logger.error("File not found: %s", args.audio)
         raise SystemExit(1)
 
-    result = transcribe(args.audio, args.model, args.language)
+    prompt = None if args.no_prompt else args.initial_prompt
+    result = transcribe(args.audio, args.model, args.language, args.engine, args.compute_type, initial_prompt=prompt)
     save_output(result, args.audio)
-    print("\nDone!")
+    logger.info("Done!")
 
 
 if __name__ == "__main__":
