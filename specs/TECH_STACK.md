@@ -102,7 +102,7 @@
 podcast-knowledge-extractor/
 ├── src/
 │   ├── __init__.py
-│   ├── downloader.py       # Episode fetching & async audio download
+│   ├── scraper.py       # Episode fetching & async audio download
 │   ├── transcriber.py      # Audio → text via faster-whisper / WhisperX
 │   ├── diarizer.py         # Speaker diarization & cross-episode identification
 │   ├── indexer.py          # Chunking, embedding generation, vector store

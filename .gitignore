@@ -2,6 +2,7 @@
 data/audio/*.mp3
 data/audio/*.wav
 data/audio/*.m4a
+data/audio/*.part
 
 # Transcripts
 data/transcripts/*.json

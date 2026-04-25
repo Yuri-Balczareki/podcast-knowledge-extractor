@@ -16,7 +16,9 @@ python3.12 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
 # Run pipeline stages
-python src/downloader.py                          # Phase 1: interactive episode download
+python src/scraper.py                          # Phase 1: sync feed + download all pending
+python src/scraper.py --sync-only              # sync feed to CSV without downloading
+python src/scraper.py --limit 5                # download up to 5 pending episodes
 python src/transcribe.py <audio.mp3> --engine faster-whisper --model base --language pt
 python src/diarize.py <audio.mp3>                 # requires HF_TOKEN in .env
 
@@ -35,7 +37,7 @@ python scripts/compare_whisper.py <audio.mp3> --model base --engines openai-whis
 
 ## Architecture
 
-**Data flow:** RSS feed → `downloader.py` → MP3 in `data/audio/` → `transcribe.py` → JSON/TXT in `data/transcripts/` → `diarize.py` → `*.diarized.json/txt` with speaker labels.
+**Data flow:** RSS feed → `scraper.py` → MP3 in `data/audio/` → `transcribe.py` → JSON/TXT in `data/transcripts/` → `diarize.py` → `*.diarized.json/txt` with speaker labels.
 
 Each module is a standalone CLI script (`argparse` + `if __name__ == "__main__": main()`).
 
@@ -60,4 +62,58 @@ Each module is a standalone CLI script (`argparse` + `if __name__ == "__main__":
 - Output directories: `data/audio/`, `data/transcripts/`, `data/chroma/` (all gitignored)
 - Benchmarking results go in `data/comparisons/`
 - Design docs live in `docs/features/`
-- **Changelog**: every significant code change (new features, bug fixes, refactors, dependency changes) must be summarized under `## [Unreleased]` in `CHANGELOG.md` using [Keep a Changelog](https://keepachangelog.com) categories (`Added`, `Changed`, `Fixed`, `Removed`). Skip trivial changes like comment edits or minor formatting.
+- **Changelog**: update `CHANGELOG.md` at every commit via the `/create-commit` skill. Each commit's changes go under a dated section (`## [Unreleased] - YYYY-MM-DD`) with three subsections: `### Added`, `### Changed`, `### Removed`. Multiple commits on the same day append to the existing dated section. Entries are derived from the commit message summary. Skip trivial changes like comment edits or minor formatting.
+- **README sync**: after every implementation that adds, changes, or removes user-facing functionality, review `README.md` and update it. This includes new scripts, new CLI flags, changed usage patterns, new dependencies, modified project structure, or removed features. The README must always reflect the current state of the project.
+- **Test coverage**: every source file under `src/` with complex functions must have a corresponding unit test file under `tests/unit/`. When adding or modifying complex logic, ensure tests exist and cover both happy path and edge cases.
+
+## Behavioral Guidelines
+
+### 1. Think Before Coding
+Don't assume. Don't hide confusion. Surface tradeoffs.
+
+Before implementing:
+- State your assumptions explicitly. If uncertain, ask.
+- If multiple interpretations exist, present them - don't pick silently.
+- If a simpler approach exists, say so. Push back when warranted.
+- If something is unclear, stop. Name what's confusing. Ask.
+
+### 2. Simplicity First
+Minimum code that solves the problem. Nothing speculative.
+
+- No features beyond what was asked.
+- No abstractions for single-use code.
+- No "flexibility" or "configurability" that wasn't requested.
+- No error handling for impossible scenarios.
+- If you write 200 lines and it could be 50, rewrite it.
+- Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
+
+### 3. Surgical Changes
+Touch only what you must. Clean up only your own mess.
+
+When editing existing code:
+- Don't "improve" adjacent code, comments, or formatting.
+- Don't refactor things that aren't broken.
+- Match existing style, even if you'd do it differently.
+- If you notice unrelated dead code, mention it - don't delete it.
+
+When your changes create orphans:
+- Remove imports/variables/functions that YOUR changes made unused.
+- Don't remove pre-existing dead code unless asked.
+- The test: Every changed line should trace directly to the user's request.
+
+### 4. Goal-Driven Execution
+Define success criteria. Loop until verified.
+
+Transform tasks into verifiable goals:
+- "Add validation" → "Write tests for invalid inputs, then make them pass"
+- "Fix the bug" → "Write a test that reproduces it, then make it pass"
+- "Refactor X" → "Ensure tests pass before and after"
+
+For multi-step tasks, state a brief plan:
+1. [Step] → verify: [check]
+2. [Step] → verify: [check]
+3. [Step] → verify: [check]
+
+Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
+
+These guidelines are working if: fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
