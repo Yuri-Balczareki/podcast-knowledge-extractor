@@ -1,14 +1,15 @@
 """Batch transcription pipeline for podcast episodes.
 
 Reads the episode CSV, identifies downloaded-but-not-transcribed episodes,
-and transcribes them using whisper.cpp with the large model. Supports
-parallel workers and tracks progress in the CSV.
+and transcribes them using the specified Whisper engine. Supports
+parallel workers (whisper.cpp only) and tracks progress in the CSV.
 
 Usage:
-    python src/batch_transcribe.py                    # transcribe all pending
-    python src/batch_transcribe.py --limit 10         # transcribe up to 10 episodes
-    python src/batch_transcribe.py --workers 2        # use 2 parallel workers
-    python src/batch_transcribe.py --dry-run          # show what would be transcribed
+    python src/batch_transcribe.py                              # faster-whisper (default)
+    python src/batch_transcribe.py --engine whisper.cpp          # whisper.cpp engine
+    python src/batch_transcribe.py --engine whisper.cpp --workers 2  # parallel (whisper.cpp only)
+    python src/batch_transcribe.py --limit 10                   # transcribe up to 10 episodes
+    python src/batch_transcribe.py --dry-run                    # show what would be transcribed
 """
 
 import argparse
@@ -25,10 +26,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.scraper import AUDIO_DIR, EPISODES_CSV, CSV_FIELDS, load_csv, save_csv
 from src.transcribe import (
+    ENGINES,
     INITIAL_PROMPT,
     TRANSCRIPTS_DIR,
     load_whisper_cpp_model,
     save_output,
+    transcribe,
     transcribe_with_model,
 )
 
@@ -43,7 +46,10 @@ def _init_worker(counter, model_size: str, n_threads: int) -> None:
     with counter.get_lock():
         counter.value += 1
         _worker_id = counter.value
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    logger.info("[W%d] Loading whisper.cpp model '%s' (%d threads)...", _worker_id, model_size, n_threads)
     _worker_model = load_whisper_cpp_model(model_size, n_threads)
+    logger.info("[W%d] Model loaded and ready.", _worker_id)
 
 
 def _transcribe_episode(audio_path: str, language: str | None, initial_prompt: str | None, log_prefix: str) -> dict:
@@ -86,6 +92,7 @@ def batch_transcribe(
     csv_path: Path,
     audio_dir: Path,
     model_size: str = "large",
+    engine: str = "faster-whisper",
     language: str | None = None,
     workers: int = 1,
     limit: int | None = None,
@@ -118,19 +125,36 @@ def batch_transcribe(
             logger.info("  [%d] %s", i, ep["title"])
         return
 
-    logger.info("Transcribing %d episodes (workers=%d, model=%s)", len(batch), workers, model_size)
+    logger.info("Transcribing %d episodes (engine=%s, workers=%d, model=%s)", len(batch), engine, workers, model_size)
     start_time = time.time()
     transcribed = 0
     failed = 0
 
+    if workers > 1 and engine != "whisper.cpp":
+        logger.warning(
+            "Multi-worker mode only supported for whisper.cpp. "
+            "Falling back to workers=1 for engine '%s'.", engine
+        )
+        workers = 1
+
     if workers == 1:
-        n_threads = os.cpu_count() or 4
-        model = load_whisper_cpp_model(model_size, n_threads)
+        if engine == "whisper.cpp":
+            n_threads = os.cpu_count() or 4
+            model = load_whisper_cpp_model(model_size, n_threads)
+
         for i, ep in enumerate(batch, 1):
             audio_path = str(audio_dir / ep["filename"])
             prefix = f"[{i}/{len(batch)}] "
             try:
-                result = transcribe_with_model(model, audio_path, language, initial_prompt, log_prefix=prefix)
+                if engine == "whisper.cpp":
+                    result = transcribe_with_model(
+                        model, audio_path, language, initial_prompt, log_prefix=prefix,
+                    )
+                else:
+                    result = transcribe(
+                        audio_path, model_size, language, engine,
+                        initial_prompt=initial_prompt,
+                    )
                 _, json_path = save_output(result, audio_path)
                 ep["transcription_status"] = "transcribed"
                 ep["transcript_path"] = str(json_path)
@@ -207,6 +231,7 @@ def main():
 
     parser = argparse.ArgumentParser(description="Batch transcription pipeline")
     parser.add_argument("--model", default="large", help="Whisper model size (default: large)")
+    parser.add_argument("--engine", default="faster-whisper", choices=ENGINES, help="Whisper engine (default: faster-whisper)")
     parser.add_argument("--language", default=None, help="Force language (e.g. 'pt')")
     parser.add_argument("--workers", type=int, default=1, help="Number of parallel workers (default: 1)")
     parser.add_argument("--limit", type=int, default=None, help="Max episodes to transcribe")
@@ -224,6 +249,7 @@ def main():
         csv_path=EPISODES_CSV,
         audio_dir=AUDIO_DIR,
         model_size=args.model,
+        engine=args.engine,
         language=args.language,
         workers=args.workers,
         limit=args.limit,

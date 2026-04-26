@@ -41,6 +41,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Replaced `print()` calls with structured `logging` in transcription module
 - Lazy-loaded ML libraries (torch, whisper, faster_whisper, pywhispercpp) to avoid unnecessary imports
 - Refactored whisper.cpp internals to support model reuse across multiple transcriptions with progress ETA logging
+- Added worker-level logging in batch transcription parallel mode for model init observability
 
 ### Removed
 
