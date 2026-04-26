@@ -31,7 +31,10 @@ FEED_URL = "https://jn-feed.vercel.app/api/filter?podcast=nerdcast"
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 AUDIO_DIR = DATA_DIR / "audio"
 EPISODES_CSV = DATA_DIR / "jovem-nerd-episodes.csv"
-CSV_FIELDS = ["title", "url", "pub_date", "duration", "status", "filename", "size_mb", "format", "guid"]
+CSV_FIELDS = [
+    "title", "url", "pub_date", "duration", "status", "filename", "size_mb", "format", "guid",
+    "transcription_status", "transcript_path",
+]
 USER_AGENT = "PodcastKnowledgeExtractor/1.0"
 
 
@@ -90,6 +93,8 @@ def fetch_episodes(feed_url: str) -> list[dict]:
             "size_mb": "",
             "format": "",
             "guid": getattr(entry, "id", audio_url),
+            "transcription_status": "not_transcribed",
+            "transcript_path": "",
         })
 
     logger.info("Found %d episodes in feed", len(episodes))
@@ -115,6 +120,10 @@ def save_csv(csv_path: Path, episodes: list[dict]) -> None:
 def sync_feed_to_csv(feed_url: str, csv_path: Path) -> list[dict]:
     feed_episodes = fetch_episodes(feed_url)
     existing = load_csv(csv_path)
+
+    for ep in existing:
+        ep.setdefault("transcription_status", "not_transcribed")
+        ep.setdefault("transcript_path", "")
 
     existing_by_guid = {ep["guid"]: ep for ep in existing}
 

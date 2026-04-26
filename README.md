@@ -20,6 +20,7 @@ Built for **Brazilian Portuguese** content (Nerdcast podcast), fully local with 
 - **Multi-engine transcription** — faster-whisper (CTranslate2, 4x faster), openai-whisper (reference), and whisper.cpp (native Metal GPU via GGML)
 - **Speaker diarization** — pyannote.audio pipeline with O(N*M) temporal overlap merge algorithm to assign speakers to transcript segments
 - **Batch downloading** — RSS feed sync to CSV catalog with resume support, parallel downloads via httpx
+- **Batch transcription** — CSV-tracked pipeline with auto-detect, resume, and optional parallel workers via ProcessPoolExecutor
 - **Portuguese-aware prompting** — initial prompt preserves proper nouns (Alottoni, Azaghal, NerdCast) and English loanwords
 - **Benchmarking** — compare engines on WER, wall time, real-time factor, and memory usage
 - **Device auto-detection** — MPS > CUDA > CPU, across all ML modules
@@ -63,12 +64,14 @@ podcast-knowledge-extractor/
 ├── src/
 │   ├── scraper.py          # Phase 1: RSS feed sync + batch MP3 download
 │   ├── transcribe.py          # Phase 2: Multi-engine audio transcription
+│   ├── batch_transcribe.py    # Phase 2: Batch transcription with CSV tracking
 │   └── diarize.py             # Phase 3: Speaker diarization + merge
 ├── scripts/
 │   └── compare_whisper.py     # Engine benchmarking (WER, timing, memory)
 ├── tests/
 │   └── unit/
-│       └── test_diarize.py    # Merge algorithm + I/O tests
+│       ├── test_diarize.py    # Merge algorithm + I/O tests
+│       └── test_batch_transcribe.py  # Batch pipeline logic tests
 ├── app/                       # Streamlit UI (Phase 5)
 ├── data/
 │   ├── audio/                 # Downloaded episodes (gitignored)
@@ -137,6 +140,24 @@ python src/transcribe.py data/audio/episode.mp3 --engine whisper.cpp --model bas
 ```
 
 Output: `data/transcripts/{name}.json` (segments with timestamps) and `data/transcripts/{name}.txt` (full text).
+
+### Batch transcription
+
+```bash
+# Transcribe all downloaded episodes (sequential, whisper.cpp large model)
+python src/batch_transcribe.py
+
+# Preview what would be transcribed
+python src/batch_transcribe.py --dry-run
+
+# Transcribe up to 10 episodes with 2 parallel workers
+python src/batch_transcribe.py --limit 10 --workers 2
+
+# Use a specific model and language
+python src/batch_transcribe.py --model large --language pt
+```
+
+Tracks transcription status in the episode CSV (`transcription_status`, `transcript_path`). Re-running skips already-transcribed episodes. Existing transcripts are auto-detected on first run.
 
 ### Speaker diarization
 

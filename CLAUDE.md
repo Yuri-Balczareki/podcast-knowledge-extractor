@@ -20,6 +20,9 @@ python src/scraper.py                          # Phase 1: sync feed + download a
 python src/scraper.py --sync-only              # sync feed to CSV without downloading
 python src/scraper.py --limit 5                # download up to 5 pending episodes
 python src/transcribe.py <audio.mp3> --engine faster-whisper --model base --language pt
+python src/batch_transcribe.py                     # batch transcribe all pending episodes
+python src/batch_transcribe.py --dry-run           # preview pending episodes
+python src/batch_transcribe.py --limit 5 --workers 2  # parallel batch with limit
 python src/diarize.py <audio.mp3>                 # requires HF_TOKEN in .env
 
 # Tests

@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import platform
+import sys
 import time
 from pathlib import Path
 
@@ -108,20 +109,58 @@ def _format_timestamp(seconds: float) -> str:
     return f"{m:02d}:{s:02d}"
 
 
-def _transcribe_whisper_cpp(audio_path: str, model_size: str, language: str | None, initial_prompt: str | None = None) -> dict:
+def load_whisper_cpp_model(model_size: str = "large", n_threads: int | None = None) -> "Model":
     from pywhispercpp.model import Model
 
     ggml_model = WHISPERCPP_MODEL_MAP.get(model_size, model_size)
-    n_threads = os.cpu_count() or 4
-    logger.info("Loading whisper.cpp model '%s' (n_threads=%d)...", ggml_model, n_threads)
-    model = Model(ggml_model, n_threads=n_threads, print_progress=False)
+    threads = n_threads or os.cpu_count() or 4
+    logger.info("Loading whisper.cpp model '%s' (n_threads=%d)...", ggml_model, threads)
+    sys.stderr.flush()
 
+    import tempfile
+    tmp = tempfile.TemporaryFile(mode='w+')
+    old_stderr_fd = os.dup(2)
+    os.dup2(tmp.fileno(), 2)
+    try:
+        model = Model(ggml_model, n_threads=threads, print_progress=False)
+    finally:
+        os.dup2(old_stderr_fd, 2)
+        os.close(old_stderr_fd)
+        tmp.seek(0)
+        captured = tmp.read()
+        tmp.close()
+
+    device = "Metal GPU" if "Metal" in captured else "CPU"
+    model_mb = os.path.getsize(model.model_path) / (1024 * 1024) if hasattr(model, 'model_path') else 3094
+    logger.info("Model loaded: %.0f MB (device=%s)", model_mb, device)
+    return model
+
+
+def _transcribe_whisper_cpp_with_model(
+    model, audio_path: str, language: str | None, initial_prompt: str | None = None,
+    log_prefix: str = "",
+) -> dict:
     total_duration = _get_audio_duration(audio_path)
     total_str = _format_timestamp(total_duration)
 
+    start = time.time()
+    last_logged_pct = -5
+
     def on_segment(seg):
+        nonlocal last_logged_pct
         pos = seg.t1 / 100.0
-        logger.info("Progress: %s / %s", _format_timestamp(pos), total_str)
+        pct = int(pos / total_duration * 100) if total_duration > 0 else 0
+        if pct - last_logged_pct < 5:
+            return
+        last_logged_pct = pct
+        elapsed = time.time() - start
+        if pos > 0:
+            eta_secs = elapsed * (total_duration - pos) / pos
+            eta_m, eta_s = divmod(int(eta_secs), 60)
+            eta_str = f"{eta_m}m{eta_s:02d}s left"
+        else:
+            eta_str = "estimating..."
+        logger.info("%s%s / %s (%d%%) — %s", log_prefix, _format_timestamp(pos), total_str, pct, eta_str)
 
     transcribe_kwargs = {}
     if language:
@@ -129,8 +168,7 @@ def _transcribe_whisper_cpp(audio_path: str, model_size: str, language: str | No
     if initial_prompt:
         transcribe_kwargs["initial_prompt"] = initial_prompt
 
-    logger.info("Transcribing: %s (%s)", audio_path, total_str)
-    start = time.time()
+    logger.info("%sTranscribing: %s (%s)", log_prefix, audio_path, total_str)
     raw_segments = model.transcribe(audio_path, new_segment_callback=on_segment, **transcribe_kwargs)
 
     segments = [{"start": s.t0 / 100.0, "end": s.t1 / 100.0, "text": s.text} for s in raw_segments]
@@ -139,9 +177,21 @@ def _transcribe_whisper_cpp(audio_path: str, model_size: str, language: str | No
     elapsed = time.time() - start
     minutes, secs = divmod(int(elapsed), 60)
     lang = language or "auto"
-    logger.info("Transcription completed in %dm%02ds (language=%s)", minutes, secs, lang)
+    logger.info("%sTranscription completed in %dm%02ds (language=%s)", log_prefix, minutes, secs, lang)
 
     return {"text": full_text, "segments": segments, "language": lang}
+
+
+def transcribe_with_model(
+    model, audio_path: str, language: str | None = None,
+    initial_prompt: str | None = INITIAL_PROMPT, log_prefix: str = "",
+) -> dict:
+    return _transcribe_whisper_cpp_with_model(model, audio_path, language, initial_prompt, log_prefix)
+
+
+def _transcribe_whisper_cpp(audio_path: str, model_size: str, language: str | None, initial_prompt: str | None = None) -> dict:
+    model = load_whisper_cpp_model(model_size)
+    return _transcribe_whisper_cpp_with_model(model, audio_path, language, initial_prompt)
 
 
 def transcribe(
