@@ -41,7 +41,8 @@ ruff check src/ tests/
 ruff format src/ tests/
 
 # Benchmarking
-python scripts/compare_whisper.py <audio.mp3> --model base --engines openai-whisper faster-whisper whisper.cpp --save-json
+python scripts/compare_whisper.py --engines faster-whisper whisper.cpp --output-format markdown  # default fixtures
+python scripts/compare_whisper.py <audio.mp3> --model base --engines openai-whisper faster-whisper whisper.cpp --output-format markdown
 ```
 
 ## Architecture

@@ -8,12 +8,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `--output-format` flag for `compare_whisper.py` with `json`, `markdown`, and `all` choices for saving benchmark reports
+- Markdown comparison report with metadata, performance, output quality, and pairwise WER tables
+- Multi-file benchmark support: `audio` arg accepts multiple files, defaults to 3 fixture clips when omitted
+- Averaged benchmark summary report (`benchmark_summary.md`) when running multiple files
+- `--parallel` flag for `compare_whisper.py` to run multiple files concurrently via `ProcessPoolExecutor`
 - Functional test infrastructure for pipeline accuracy validation (transcription WER, diarization DER, merge speaker accuracy)
 - `tests/conftest.py` with `functional` pytest marker registration
 - `tests/functional/test_pipeline.py` with three test classes: `TestTranscriptionQuality`, `TestDiarizationQuality`, `TestMergeEndToEnd`
 - Graceful skip when fixtures or HF_TOKEN are missing
 
-## [Unreleased] - 2026-04-26
+### Changed
+
+- `compare_whisper.py`: replaced `--save-json` flag with `--output-format {json,markdown,all}`
+- `compare_whisper.py`: `audio` positional arg now optional (`nargs='*'`), defaults to fixture clips
 
 ### Added
 

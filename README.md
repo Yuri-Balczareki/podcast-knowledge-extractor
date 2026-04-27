@@ -192,12 +192,41 @@ Output: `data/transcripts/{name}.diarized.json` and `data/transcripts/{name}.dia
 ### Benchmark engines
 
 ```bash
-# Compare all engines on the same audio
-python scripts/compare_whisper.py data/audio/episode.mp3 --model base --engines openai-whisper faster-whisper whisper.cpp --save-json
+# Run benchmark on default fixture clips (3 x ~2min clips)
+python scripts/compare_whisper.py --engines faster-whisper whisper.cpp --output-format markdown
+
+# Compare engines on a specific audio file
+python scripts/compare_whisper.py data/audio/episode.mp3 --model base --engines openai-whisper faster-whisper whisper.cpp --output-format markdown
 
 # Quick test on first 60 seconds
 python scripts/compare_whisper.py data/audio/episode.mp3 --max-duration 60
 ```
+
+### Engine comparison (Apple M4, 32 GB)
+
+Averaged across 3 x ~2 min NerdCast clips:
+
+**Large-v3 model:**
+
+| Metric | openai-whisper | faster-whisper | whisper.cpp |
+|--------|----------------|----------------|-------------|
+| Device | cpu | cpu | **metal** |
+| Avg wall time | 0m51s | 3m30s | **0m27s** |
+| Real-time factor | 2.3x | 0.6x | **5.1x** |
+| Memory (RSS) | 5,066 MB | 6,218 MB | **3,576 MB** |
+| Avg word count | 287 | 297 | 298 |
+
+**Medium model:**
+
+| Metric | openai-whisper | faster-whisper | whisper.cpp |
+|--------|----------------|----------------|-------------|
+| Device | cpu | cpu | **metal** |
+| Avg wall time | 0m24s | 1m15s | **0m09s** |
+| Real-time factor | 5.0x | 1.6x | **13.1x** |
+| Memory (RSS) | 2,810 MB | 1,857 MB | **1,910 MB** |
+| Avg word count | 235 | 230 | 243 |
+
+**Recommendation:** Use **whisper.cpp** on Apple Silicon — it's the only engine that leverages Metal GPU. OpenAI Whisper and faster-whisper fall back to CPU (no MPS/CUDA support on Mac). Medium model is ~2.5x faster than large with moderate quality tradeoff (pairwise WER 14–21%).
 
 ## Testing
 

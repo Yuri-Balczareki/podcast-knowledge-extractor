@@ -53,7 +53,7 @@ WHISPERCPP_MODEL_MAP = {
 INITIAL_PROMPT = (
     "Transcrição de podcast brasileiro de cultura pop. "
     "Preserve nomes próprios, termos técnicos e palavras em inglês "
-    "exatamente como são falados. Exemplos: Alottoni, Azaghal, "
+    "exatamente como são falados. Exemplos: Alexandre Ottoni, Alottoni, Azaghal, "
     "NerdCast, Jovem Nerd, RPG, cosplay, anime, manga. "
     "Ignore músicas e trilhas sonoras de fundo."
 )
@@ -117,7 +117,14 @@ def _transcribe_faster_whisper(
     logger.info("Transcribing: %s", audio_path)
     start = time.time()
     segments_iter, info = model.transcribe(
-        audio_path, language=language, vad_filter=True, initial_prompt=initial_prompt
+        audio_path,
+        language=language,
+        beam_size=5,
+        initial_prompt=initial_prompt,
+        vad_filter=False,
+        no_speech_threshold=0.8,
+        compression_ratio_threshold=3.0,
+        condition_on_previous_text=False,
     )
 
     duration = info.duration
@@ -416,7 +423,7 @@ def main():
         help="Quantization type for faster-whisper (default: float16, ignored for openai-whisper and whisper.cpp)",
     )
     parser.add_argument(
-        "--language", default=None, help="Force language (e.g. 'pt' for Portuguese)"
+        "--language", default="pt", help="Force language (default: pt)"
     )
     parser.add_argument(
         "--initial-prompt",

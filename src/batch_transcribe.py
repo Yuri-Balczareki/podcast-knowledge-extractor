@@ -476,11 +476,11 @@ def main():
     )
     parser.add_argument(
         "--engine",
-        default="faster-whisper",
+        default="whisper.cpp",
         choices=ENGINES,
         help="Whisper engine (default: faster-whisper)",
     )
-    parser.add_argument("--language", default=None, help="Force language (e.g. 'pt')")
+    parser.add_argument("--language", default="pt", help="Force language (default: pt)")
     parser.add_argument(
         "--workers", type=int, default=1, help="Number of parallel workers (default: 1)"
     )

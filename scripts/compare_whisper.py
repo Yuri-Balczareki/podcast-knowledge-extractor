@@ -10,7 +10,9 @@ import platform
 import subprocess
 import sys
 import time
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field
+from functools import partial
 from pathlib import Path
 from statistics import mean
 
@@ -34,6 +36,13 @@ INITIAL_PROMPT = (
     "NerdCast, Jovem Nerd, RPG, cosplay, anime, manga. "
     "Ignore músicas e trilhas sonoras de fundo."
 )
+
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_FIXTURES = [
+    _PROJECT_ROOT / "tests" / "functional" / "fixtures" / "nerdcast_1025_clip.mp3",
+    _PROJECT_ROOT / "tests" / "functional" / "fixtures" / "nerdcast_1026_clip.mp3",
+    _PROJECT_ROOT / "tests" / "functional" / "fixtures" / "nerdcast_1027_clip.mp3",
+]
 
 
 @dataclass
@@ -97,7 +106,15 @@ def run_openai_whisper(
     logger.info("OpenAI Whisper — loading model '%s' on %s...", model_size, device)
 
     rss_before = get_current_rss_mb()
-    model = whisper.load_model(model_size, device=device)
+    try:
+        model = whisper.load_model(model_size, device=device)
+    except NotImplementedError:
+        if device == "mps":
+            logger.warning("MPS failed for model '%s', falling back to CPU", model_size)
+            device = "cpu"
+            model = whisper.load_model(model_size, device=device)
+        else:
+            raise
 
     audio_input = audio_array if audio_array is not None else audio_path
     start = time.perf_counter()
@@ -426,6 +443,94 @@ def save_metrics_json(
     return path
 
 
+def save_markdown_report(
+    results: list[TranscriptionResult],
+    metrics: dict[str, EngineMetrics],
+    pairwise: list[PairwiseComparison],
+    audio_duration_s: float,
+    model_size: str,
+    language: str | None,
+    initial_prompt: str | None,
+    output_dir: Path,
+    stem: str,
+) -> Path:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    dur_min = audio_duration_s / 60
+    lang_str = language if language else "auto-detect"
+    prompt_str = (
+        f"{initial_prompt[:60]}..." if initial_prompt and len(initial_prompt) > 60
+        else (initial_prompt if initial_prompt else "none")
+    )
+    engines = [r.engine for r in results]
+
+    lines = [
+        "# Whisper Transcription Comparison",
+        "",
+        "## Metadata",
+        "",
+        "| Parameter | Value |",
+        "|-----------|-------|",
+        f"| Audio duration | {dur_min:.1f} min ({audio_duration_s:.0f}s) |",
+        f"| Model size | {model_size} |",
+        f"| Language | {lang_str} |",
+        f"| Initial prompt | {prompt_str} |",
+        "",
+        "## Performance",
+        "",
+        "| Metric | " + " | ".join(engines) + " |",
+        "|--------" + "".join("|-" * len(engines)) + "|",
+    ]
+
+    lines.append("| Device | " + " | ".join(r.device_used for r in results) + " |")
+    lines.append("| Wall time | " + " | ".join(format_time(r.wall_time_s) for r in results) + " |")
+    lines.append(
+        "| Real-time factor | "
+        + " | ".join(f"{audio_duration_s / r.wall_time_s:.1f}x" if r.wall_time_s else "N/A" for r in results)
+        + " |"
+    )
+    lines.append(
+        "| Memory delta (RSS) | " + " | ".join(f"{r.memory_rss_mb:.1f} MB" for r in results) + " |"
+    )
+
+    lines += [
+        "",
+        "## Output Quality",
+        "",
+        "| Metric | " + " | ".join(engines) + " |",
+        "|--------" + "".join("|-" * len(engines)) + "|",
+    ]
+    lines.append("| Word count | " + " | ".join(f"{metrics[e].word_count:,d}" for e in engines) + " |")
+    lines.append("| Character count | " + " | ".join(f"{metrics[e].char_count:,d}" for e in engines) + " |")
+    lines.append("| Segment count | " + " | ".join(f"{metrics[e].segment_count:,d}" for e in engines) + " |")
+    lines.append(
+        "| Avg segment duration | "
+        + " | ".join(f"{metrics[e].avg_segment_duration:.2f}s" for e in engines)
+        + " |"
+    )
+
+    if pairwise:
+        lines += [
+            "",
+            "## Pairwise Comparison",
+            "",
+            "| Pair | Word diff | WER |",
+            "|------|-----------|-----|",
+        ]
+        for p in pairwise:
+            sign = "+" if p.word_count_diff >= 0 else ""
+            lines.append(
+                f"| {p.engine_a} vs {p.engine_b} "
+                f"| {sign}{p.word_count_diff} ({sign}{p.word_count_diff_pct:.1f}%) "
+                f"| {p.wer:.4f} ({p.wer * 100:.2f}%) |"
+            )
+
+    lines.append("")
+
+    path = output_dir / f"{stem}_comparison.md"
+    path.write_text("\n".join(lines), encoding="utf-8")
+    return path
+
+
 def _get_audio_duration_ffprobe(audio_path: str) -> float:
     result = subprocess.run(
         ["ffprobe", "-v", "quiet", "-show_entries", "format=duration", "-of", "csv=p=0", audio_path],
@@ -434,71 +539,203 @@ def _get_audio_duration_ffprobe(audio_path: str) -> float:
     return float(result.stdout.strip())
 
 
-def main():
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
+def save_benchmark_summary(
+    all_file_data: list[dict],
+    engines: list[str],
+    model_size: str,
+    output_dir: Path,
+) -> Path:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    n = len(all_file_data)
 
-    parser = argparse.ArgumentParser(description="Compare Whisper transcription engines")
-    parser.add_argument("audio", help="Path to the audio file (mp3, wav, etc.)")
-    parser.add_argument("--model", default="base", choices=MODEL_CHOICES, help="Whisper model size (default: base)")
-    parser.add_argument("--language", default=None, help="Force language code (e.g. 'pt' for Portuguese)")
-    parser.add_argument("--max-duration", type=int, default=None, help="Limit audio to first N seconds (for quick tests)")
-    parser.add_argument("--initial-prompt", default=INITIAL_PROMPT, help="Initial prompt to guide transcription")
-    parser.add_argument("--no-prompt", action="store_true", help="Disable initial prompt")
-    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR, help="Directory for output files")
-    parser.add_argument("--save-json", action="store_true", help="Save metrics to a JSON file")
-    parser.add_argument(
-        "--engines", nargs="+", default=list(ENGINE_RUNNERS.keys()),
-        choices=list(ENGINE_RUNNERS.keys()), help="Engines to compare (default: all)",
-    )
-    args = parser.parse_args()
+    device_used = {}
+    avg_wall = {}
+    avg_rtf = {}
+    avg_mem = {}
+    avg_words = {}
+    for engine in engines:
+        wall_times, rtfs, mems, words = [], [], [], []
+        for fd in all_file_data:
+            r = next(r for r in fd["results"] if r.engine == engine)
+            wall_times.append(r.wall_time_s)
+            rtfs.append(fd["audio_duration_s"] / r.wall_time_s if r.wall_time_s else 0)
+            mems.append(r.memory_rss_mb)
+            words.append(fd["metrics"][engine].word_count)
+        device_used[engine] = next(r for r in all_file_data[0]["results"] if r.engine == engine).device_used
+        avg_wall[engine] = mean(wall_times)
+        avg_rtf[engine] = mean(rtfs)
+        avg_mem[engine] = mean(mems)
+        avg_words[engine] = mean(words)
 
-    audio_path = Path(args.audio)
+    pair_wers: dict[tuple[str, str], list[float]] = {}
+    for fd in all_file_data:
+        for p in fd["pairwise"]:
+            pair_wers.setdefault((p.engine_a, p.engine_b), []).append(p.wer)
+
+    lines = [
+        f"# Benchmark Summary ({n} files)",
+        "",
+        "## Files",
+        "",
+        "| # | File |",
+        "|---|------|",
+    ]
+    for i, fd in enumerate(all_file_data, 1):
+        lines.append(f"| {i} | {fd['stem']}.mp3 |")
+
+    lines += [
+        "",
+        f"## Averaged Performance (model: {model_size})",
+        "",
+        "| Metric | " + " | ".join(engines) + " |",
+        "|--------" + "".join("|-" * len(engines)) + "|",
+        "| Device | " + " | ".join(device_used[e] for e in engines) + " |",
+        "| Avg wall time | " + " | ".join(format_time(avg_wall[e]) for e in engines) + " |",
+        "| Avg real-time factor | " + " | ".join(f"{avg_rtf[e]:.1f}x" for e in engines) + " |",
+        "| Avg memory delta (RSS) | " + " | ".join(f"{avg_mem[e]:.1f} MB" for e in engines) + " |",
+        "",
+        "## Averaged Output Quality",
+        "",
+        "| Metric | " + " | ".join(engines) + " |",
+        "|--------" + "".join("|-" * len(engines)) + "|",
+        "| Avg word count | " + " | ".join(f"{avg_words[e]:.0f}" for e in engines) + " |",
+    ]
+
+    if pair_wers:
+        lines += [
+            "",
+            "## Averaged Pairwise WER",
+            "",
+            "| Pair | Avg WER |",
+            "|------|---------|",
+        ]
+        for (ea, eb), wers in pair_wers.items():
+            avg = mean(wers)
+            lines.append(f"| {ea} vs {eb} | {avg:.4f} ({avg * 100:.2f}%) |")
+
+    lines.append("")
+
+    path = output_dir / f"benchmark_summary_{model_size}.md"
+    path.write_text("\n".join(lines), encoding="utf-8")
+    return path
+
+
+def run_single_file(
+    audio_path: Path,
+    model_size: str,
+    language: str | None,
+    prompt: str | None,
+    engine_names: list[str],
+    max_duration: int | None,
+    output_dir: Path,
+    output_format: str | None,
+) -> dict:
     if not audio_path.exists():
         logger.error("File not found: %s", audio_path)
         raise SystemExit(1)
 
-    needs_openai_audio = any(e in args.engines for e in ("openai-whisper", "faster-whisper"))
+    needs_openai_audio = any(e in engine_names for e in ("openai-whisper", "faster-whisper"))
     audio_array = None
 
-    if needs_openai_audio or args.max_duration:
+    if needs_openai_audio or max_duration:
         import whisper
 
         logger.info("Loading audio: %s", audio_path)
         audio_array = whisper.load_audio(str(audio_path))
 
-        if args.max_duration:
-            max_samples = args.max_duration * SAMPLE_RATE
+        if max_duration:
+            max_samples = max_duration * SAMPLE_RATE
             audio_array = audio_array[:max_samples]
-            logger.info("Truncated audio to first %ds", args.max_duration)
+            logger.info("Truncated audio to first %ds", max_duration)
 
         audio_duration_s = len(audio_array) / SAMPLE_RATE
     else:
         audio_duration_s = _get_audio_duration_ffprobe(str(audio_path))
 
     logger.info("Audio duration: %.1f min (%.0fs)", audio_duration_s / 60, audio_duration_s)
-    logger.info("Model: %s | Language: %s", args.model, args.language or "auto-detect")
-
-    prompt = None if args.no_prompt else args.initial_prompt
+    logger.info("Model: %s | Language: %s", model_size, language or "auto-detect")
 
     results: list[TranscriptionResult] = []
-    for engine_name in args.engines:
+    for engine_name in engine_names:
         runner = ENGINE_RUNNERS[engine_name]
-        result = runner(str(audio_path), args.model, args.language, initial_prompt=prompt, audio_array=audio_array)
+        result = runner(str(audio_path), model_size, language, initial_prompt=prompt, audio_array=audio_array)
         results.append(result)
 
     metrics = {r.engine: compute_engine_metrics(r) for r in results}
     pairwise = compute_pairwise_comparisons(results)
-    table = format_comparison_table(results, metrics, pairwise, audio_duration_s, args.model, args.language, initial_prompt=prompt)
+    table = format_comparison_table(results, metrics, pairwise, audio_duration_s, model_size, language, initial_prompt=prompt)
     logger.info(table)
 
     stem = audio_path.stem
-    saved_files = save_transcripts(results, args.output_dir, stem)
+    saved_files = save_transcripts(results, output_dir, stem)
     for f in saved_files:
         logger.info("Saved: %s", f)
 
-    if args.save_json:
-        json_path = save_metrics_json(results, metrics, pairwise, audio_duration_s, args.model, args.output_dir, stem)
+    if output_format in ("json", "all"):
+        json_path = save_metrics_json(results, metrics, pairwise, audio_duration_s, model_size, output_dir, stem)
         logger.info("Saved metrics: %s", json_path)
+
+    if output_format in ("markdown", "all"):
+        md_path = save_markdown_report(
+            results, metrics, pairwise, audio_duration_s, model_size, language, prompt, output_dir, stem,
+        )
+        logger.info("Saved report: %s", md_path)
+
+    return {
+        "stem": stem,
+        "audio_duration_s": audio_duration_s,
+        "results": results,
+        "metrics": metrics,
+        "pairwise": pairwise,
+    }
+
+
+def main():
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
+
+    parser = argparse.ArgumentParser(description="Compare Whisper transcription engines")
+    parser.add_argument("audio", nargs="*", help="Audio file(s). Defaults to fixture clips if omitted.")
+    parser.add_argument("--model", default="base", choices=MODEL_CHOICES, help="Whisper model size (default: base)")
+    parser.add_argument("--language", default="pt", help="Language code (default: pt for Portuguese)")
+    parser.add_argument("--max-duration", type=int, default=None, help="Limit audio to first N seconds (for quick tests)")
+    parser.add_argument("--initial-prompt", default=INITIAL_PROMPT, help="Initial prompt to guide transcription")
+    parser.add_argument("--no-prompt", action="store_true", help="Disable initial prompt")
+    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR, help="Directory for output files")
+    parser.add_argument(
+        "--output-format",
+        choices=["json", "markdown", "all"],
+        default=None,
+        help="Save comparison report to file (json, markdown, or all)",
+    )
+    parser.add_argument(
+        "--engines", nargs="+", default=list(ENGINE_RUNNERS.keys()),
+        choices=list(ENGINE_RUNNERS.keys()), help="Engines to compare (default: all)",
+    )
+    parser.add_argument("--parallel", action="store_true", help="Run files in parallel (one process per file)")
+    args = parser.parse_args()
+
+    audio_paths = [Path(a) for a in args.audio] if args.audio else DEFAULT_FIXTURES
+    prompt = None if args.no_prompt else args.initial_prompt
+    output_dir = args.output_dir / args.model
+
+    logger.info("Benchmarking %d file(s)%s", len(audio_paths), " (parallel)" if args.parallel else "")
+
+    run_fn = partial(
+        run_single_file,
+        model_size=args.model, language=args.language, prompt=prompt,
+        engine_names=args.engines, max_duration=args.max_duration,
+        output_dir=output_dir, output_format=args.output_format,
+    )
+
+    if args.parallel and len(audio_paths) > 1:
+        with ProcessPoolExecutor(max_workers=len(audio_paths)) as pool:
+            all_file_data = list(pool.map(run_fn, audio_paths))
+    else:
+        all_file_data = [run_fn(p) for p in audio_paths]
+
+    if len(all_file_data) > 1 and args.output_format in ("markdown", "all"):
+        summary_path = save_benchmark_summary(all_file_data, args.engines, args.model, output_dir)
+        logger.info("Saved summary: %s", summary_path)
 
     logger.info("Comparison complete.")
 
