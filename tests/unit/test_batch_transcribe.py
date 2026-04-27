@@ -10,9 +10,12 @@ from unittest import mock
 
 from src.batch_transcribe import (
     compute_threads_per_worker,
+    detect_existing_diarized_transcripts,
     detect_existing_transcripts,
     get_pending,
+    get_pending_diarization,
 )
+from src.transcribe import maybe_truncated_audio
 
 
 def _make_episode(
@@ -21,6 +24,8 @@ def _make_episode(
     filename="Test Episode.mp3",
     transcription_status="not_transcribed",
     transcript_path="",
+    diarization_status="not_diarized",
+    diarized_transcript_path="",
     guid="test-guid-1",
 ):
     return {
@@ -35,6 +40,8 @@ def _make_episode(
         "guid": guid,
         "transcription_status": transcription_status,
         "transcript_path": transcript_path,
+        "diarization_status": diarization_status,
+        "diarized_transcript_path": diarized_transcript_path,
     }
 
 
@@ -211,3 +218,210 @@ class TestBatchTranscribeDryRun(unittest.TestCase):
                 )
 
             self.assertEqual(csv_path.read_text(encoding="utf-8"), original)
+
+
+class TestGetPendingDiarization(unittest.TestCase):
+
+    def test_includes_transcribed_not_diarized(self):
+        episodes = [_make_episode(
+            transcription_status="transcribed",
+            transcript_path="/data/transcripts/test.json",
+            diarization_status="not_diarized",
+        )]
+        result = get_pending_diarization(episodes)
+        self.assertEqual(len(result), 1)
+
+    def test_includes_failed_diarization_for_retry(self):
+        episodes = [_make_episode(
+            transcription_status="transcribed",
+            transcript_path="/data/transcripts/test.json",
+            diarization_status="failed",
+        )]
+        result = get_pending_diarization(episodes)
+        self.assertEqual(len(result), 1)
+
+    def test_excludes_already_diarized(self):
+        episodes = [_make_episode(
+            transcription_status="transcribed",
+            transcript_path="/data/transcripts/test.json",
+            diarization_status="diarized",
+        )]
+        result = get_pending_diarization(episodes)
+        self.assertEqual(len(result), 0)
+
+    def test_excludes_not_transcribed(self):
+        episodes = [_make_episode(transcription_status="not_transcribed")]
+        result = get_pending_diarization(episodes)
+        self.assertEqual(len(result), 0)
+
+    def test_excludes_missing_transcript_path(self):
+        episodes = [_make_episode(
+            transcription_status="transcribed",
+            transcript_path="",
+        )]
+        result = get_pending_diarization(episodes)
+        self.assertEqual(len(result), 0)
+
+    def test_excludes_not_downloaded(self):
+        episodes = [_make_episode(
+            status="not_downloaded",
+            transcription_status="transcribed",
+            transcript_path="/data/transcripts/test.json",
+        )]
+        result = get_pending_diarization(episodes)
+        self.assertEqual(len(result), 0)
+
+
+class TestDetectExistingDiarizedTranscripts(unittest.TestCase):
+
+    def test_detects_existing_diarized_json(self):
+        with TemporaryDirectory() as tmpdir:
+            transcripts_dir = Path(tmpdir)
+            json_path = transcripts_dir / "Test Episode.diarized.json"
+            json_path.write_text("[]", encoding="utf-8")
+
+            episodes = [_make_episode(filename="Test Episode.mp3")]
+            with mock.patch("src.batch_transcribe.TRANSCRIPTS_DIR", transcripts_dir):
+                detected = detect_existing_diarized_transcripts(episodes)
+
+            self.assertEqual(detected, 1)
+            self.assertEqual(episodes[0]["diarization_status"], "diarized")
+            self.assertEqual(episodes[0]["diarized_transcript_path"], str(json_path))
+
+    def test_skips_already_diarized(self):
+        with TemporaryDirectory() as tmpdir:
+            transcripts_dir = Path(tmpdir)
+            json_path = transcripts_dir / "Test Episode.diarized.json"
+            json_path.write_text("[]", encoding="utf-8")
+
+            episodes = [_make_episode(
+                diarization_status="diarized",
+                diarized_transcript_path="/old/path.diarized.json",
+            )]
+            with mock.patch("src.batch_transcribe.TRANSCRIPTS_DIR", transcripts_dir):
+                detected = detect_existing_diarized_transcripts(episodes)
+
+            self.assertEqual(detected, 0)
+            self.assertEqual(episodes[0]["diarized_transcript_path"], "/old/path.diarized.json")
+
+    def test_no_match_when_file_missing(self):
+        with TemporaryDirectory() as tmpdir:
+            transcripts_dir = Path(tmpdir)
+            episodes = [_make_episode()]
+            with mock.patch("src.batch_transcribe.TRANSCRIPTS_DIR", transcripts_dir):
+                detected = detect_existing_diarized_transcripts(episodes)
+
+            self.assertEqual(detected, 0)
+            self.assertEqual(episodes[0]["diarization_status"], "not_diarized")
+
+    def test_skips_not_downloaded(self):
+        with TemporaryDirectory() as tmpdir:
+            transcripts_dir = Path(tmpdir)
+            json_path = transcripts_dir / "Test Episode.diarized.json"
+            json_path.write_text("[]", encoding="utf-8")
+
+            episodes = [_make_episode(status="not_downloaded")]
+            with mock.patch("src.batch_transcribe.TRANSCRIPTS_DIR", transcripts_dir):
+                detected = detect_existing_diarized_transcripts(episodes)
+
+            self.assertEqual(detected, 0)
+
+
+class TestDiarizationBackfillColumns(unittest.TestCase):
+
+    def test_setdefault_adds_diarization_keys(self):
+        ep = {"title": "Old Episode", "status": "downloaded", "filename": "old.mp3", "guid": "g1"}
+        ep.setdefault("diarization_status", "not_diarized")
+        ep.setdefault("diarized_transcript_path", "")
+        self.assertEqual(ep["diarization_status"], "not_diarized")
+        self.assertEqual(ep["diarized_transcript_path"], "")
+
+    def test_preserves_existing_diarization_values(self):
+        ep = {
+            "title": "Done Episode",
+            "diarization_status": "diarized",
+            "diarized_transcript_path": "/data/transcripts/done.diarized.json",
+        }
+        ep.setdefault("diarization_status", "not_diarized")
+        ep.setdefault("diarized_transcript_path", "")
+        self.assertEqual(ep["diarization_status"], "diarized")
+        self.assertEqual(ep["diarized_transcript_path"], "/data/transcripts/done.diarized.json")
+
+
+class TestBatchDiarizeSkipTranscription(unittest.TestCase):
+
+    def test_skip_transcription_without_diarize_returns(self):
+        with TemporaryDirectory() as tmpdir:
+            tmpdir = Path(tmpdir)
+            csv_path = tmpdir / "episodes.csv"
+            audio_dir = tmpdir / "audio"
+            audio_dir.mkdir()
+
+            ep = _make_episode(
+                transcription_status="transcribed",
+                transcript_path="/data/transcripts/test.json",
+            )
+            (audio_dir / ep["filename"]).write_bytes(b"fake audio")
+
+            from src.scraper import CSV_FIELDS
+
+            with open(csv_path, "w", newline="", encoding="utf-8") as f:
+                writer = csv.DictWriter(f, fieldnames=CSV_FIELDS)
+                writer.writeheader()
+                writer.writerow(ep)
+
+            from src.batch_transcribe import batch_transcribe
+
+            with mock.patch("src.batch_transcribe.TRANSCRIPTS_DIR", tmpdir / "transcripts"):
+                batch_transcribe(
+                    csv_path=csv_path,
+                    audio_dir=audio_dir,
+                    skip_transcription=True,
+                    enable_diarization=False,
+                )
+
+
+class TestMaybeTruncatedAudio(unittest.TestCase):
+
+    def test_yields_original_path_when_no_limit(self):
+        with maybe_truncated_audio("/fake/audio.mp3", None) as path:
+            self.assertEqual(path, "/fake/audio.mp3")
+
+    @mock.patch("src.transcribe.subprocess.run")
+    def test_calls_ffmpeg_with_correct_args(self, mock_run):
+        mock_run.return_value = mock.MagicMock(returncode=0)
+        with maybe_truncated_audio("/fake/audio.mp3", 120.0) as path:
+            self.assertNotEqual(path, "/fake/audio.mp3")
+            self.assertTrue(path.endswith(".mp3"))
+
+        args = mock_run.call_args[0][0]
+        self.assertEqual(args[0], "ffmpeg")
+        self.assertIn("-t", args)
+        self.assertEqual(args[args.index("-t") + 1], "120.0")
+        self.assertNotIn("-c", args)
+
+    @mock.patch("src.transcribe.subprocess.run")
+    def test_cleans_up_temp_file(self, mock_run):
+        mock_run.return_value = mock.MagicMock(returncode=0)
+        temp_path = None
+        with maybe_truncated_audio("/fake/audio.mp3", 60.0) as path:
+            temp_path = path
+        self.assertFalse(Path(temp_path).exists())
+
+    @mock.patch("src.transcribe.subprocess.run")
+    def test_cleans_up_on_exception(self, mock_run):
+        mock_run.return_value = mock.MagicMock(returncode=0)
+        temp_path = None
+        try:
+            with maybe_truncated_audio("/fake/audio.mp3", 60.0) as path:
+                temp_path = path
+                raise RuntimeError("test error")
+        except RuntimeError:
+            pass
+        self.assertFalse(Path(temp_path).exists())
+
+    @mock.patch("src.transcribe.subprocess.run")
+    def test_preserves_file_extension(self, mock_run):
+        mock_run.return_value = mock.MagicMock(returncode=0)
+        with maybe_truncated_audio("/fake/audio.wav", 60.0) as path:
+            self.assertTrue(path.endswith(".wav"))
