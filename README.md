@@ -69,9 +69,12 @@ podcast-knowledge-extractor/
 ├── scripts/
 │   └── compare_whisper.py     # Engine benchmarking (WER, timing, memory)
 ├── tests/
-│   └── unit/
-│       ├── test_diarize.py    # Merge algorithm + I/O tests
-│       └── test_batch_transcribe.py  # Batch pipeline logic tests
+│   ├── unit/
+│   │   ├── test_diarize.py    # Merge algorithm + I/O tests
+│   │   └── test_batch_transcribe.py  # Batch pipeline logic tests
+│   └── functional/
+│       ├── fixtures/              # Audio clip + ground truth JSON
+│       └── test_pipeline.py       # End-to-end accuracy tests (WER, DER)
 ├── app/                       # Streamlit UI (Phase 5)
 ├── data/
 │   ├── audio/                 # Downloaded episodes (gitignored)
@@ -137,6 +140,9 @@ python src/transcribe.py data/audio/episode.mp3
 # Choose engine and model
 python src/transcribe.py data/audio/episode.mp3 --engine openai-whisper --model large --language pt
 python src/transcribe.py data/audio/episode.mp3 --engine whisper.cpp --model base
+
+# Transcribe only the first 2 minutes (useful for testing)
+python src/transcribe.py data/audio/episode.mp3 --duration-limit 2
 ```
 
 Output: `data/transcripts/{name}.json` (segments with timestamps) and `data/transcripts/{name}.txt` (full text).
@@ -155,9 +161,21 @@ python src/batch_transcribe.py --limit 10 --workers 2
 
 # Use a specific model and language
 python src/batch_transcribe.py --model large --language pt
+
+# Transcribe + diarize in one pass
+python src/batch_transcribe.py --diarize
+
+# Diarize already-transcribed episodes (no re-transcription)
+python src/batch_transcribe.py --skip-transcription --diarize
+
+# Force CPU for diarization (e.g. MPS issues)
+python src/batch_transcribe.py --diarize --diarization-device cpu
+
+# Transcribe only the first 2 minutes of each episode (useful for testing)
+python src/batch_transcribe.py --duration-limit 2 --model base --limit 1
 ```
 
-Tracks transcription status in the episode CSV (`transcription_status`, `transcript_path`). Re-running skips already-transcribed episodes. Existing transcripts are auto-detected on first run.
+Tracks transcription and diarization status in the episode CSV. Re-running skips already-processed episodes. Existing transcripts and diarized transcripts are auto-detected on first run.
 
 ### Speaker diarization
 
@@ -184,16 +202,37 @@ python scripts/compare_whisper.py data/audio/episode.mp3 --max-duration 60
 ## Testing
 
 ```bash
-# Run all tests
+# Run unit tests
+pytest tests/unit/
+
+# Run all tests (functional tests self-skip without fixtures)
 pytest tests/
 
 # Single file with verbose output
 pytest tests/unit/test_diarize.py -v
 
+# Functional tests — require audio fixture + ground truth + HF_TOKEN
+pytest tests/functional/ -v -m functional
+
 # Linting
 ruff check src/ tests/
 ruff format src/ tests/
 ```
+
+### Functional tests
+
+The `tests/functional/` directory contains end-to-end accuracy tests that run real Whisper and pyannote models against a known audio clip. They validate:
+
+- **Transcription quality** — WER (Word Error Rate) below threshold via `jiwer`
+- **Diarization quality** — DER (Diarization Error Rate) below threshold via `pyannote.metrics`
+- **Merge accuracy** — speaker assignment accuracy under optimal label mapping
+
+These tests require:
+1. An audio fixture at `tests/functional/fixtures/nerdcast_clip.mp3`
+2. A ground truth annotation at `tests/functional/fixtures/ground_truth.json`
+3. `HF_TOKEN` environment variable for diarization tests
+
+Without fixtures, the tests skip gracefully.
 
 ## Roadmap
 

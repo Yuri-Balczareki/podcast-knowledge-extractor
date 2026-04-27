@@ -4,10 +4,31 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased] - 2026-04-27
+
+### Added
+
+- Functional test infrastructure for pipeline accuracy validation (transcription WER, diarization DER, merge speaker accuracy)
+- `tests/conftest.py` with `functional` pytest marker registration
+- `tests/functional/test_pipeline.py` with three test classes: `TestTranscriptionQuality`, `TestDiarizationQuality`, `TestMergeEndToEnd`
+- Graceful skip when fixtures or HF_TOKEN are missing
+
 ## [Unreleased] - 2026-04-26
 
 ### Added
 
+- `--duration-limit` CLI flag for both `transcribe.py` and `batch_transcribe.py` to limit transcription to the first N minutes of audio (e.g., `--duration-limit 2` for 2 minutes)
+- Integrated speaker diarization into batch transcription pipeline (`--diarize` flag) with single pipeline load and per-episode diarize+merge
+- `--skip-transcription --diarize` mode for diarizing already-transcribed episodes without re-transcribing
+- `--diarization-device` flag to force diarization device (cpu/cuda/mps)
+- `diarization_status` and `diarized_transcript_path` columns in episode CSV schema
+- Auto-detection of existing `.diarized.json` files on batch pipeline startup
+- Unit tests for diarization integration (`TestGetPendingDiarization`, `TestDetectExistingDiarizedTranscripts`, etc.)
+- Batch diarization spec documents (`specs/2026-04-26-batch-diarization/`)
+
+### Fixed
+
+- Diarization tensor size mismatch on last audio window by setting `segmentation_batch_size=1` in pyannote pipeline
 - Automated RSS scraper (`src/scraper.py`) with feed sync to CSV catalog and batch MP3 downloads via httpx
 - Episode catalog (`data/jovem-nerd-episodes.csv`) with 1054 episodes from Jovem Nerd feed
 - CLI modes for scraper: `--sync-only` (feed catalog only) and `--limit N` (controlled batch downloads)

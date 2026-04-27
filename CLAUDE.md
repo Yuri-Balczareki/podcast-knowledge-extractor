@@ -20,15 +20,21 @@ python src/scraper.py                          # Phase 1: sync feed + download a
 python src/scraper.py --sync-only              # sync feed to CSV without downloading
 python src/scraper.py --limit 5                # download up to 5 pending episodes
 python src/transcribe.py <audio.mp3> --engine faster-whisper --model base --language pt
+python src/transcribe.py <audio.mp3> --duration-limit 2   # transcribe first 2 minutes only
 python src/batch_transcribe.py                     # batch transcribe all pending episodes
 python src/batch_transcribe.py --dry-run           # preview pending episodes
 python src/batch_transcribe.py --limit 5 --workers 2  # parallel batch with limit
+python src/batch_transcribe.py --duration-limit 2 --model base --limit 1  # first 2 min of each episode
+python src/batch_transcribe.py --diarize               # transcribe + diarize in one pass
+python src/batch_transcribe.py --skip-transcription --diarize  # diarize already-transcribed episodes
+python src/batch_transcribe.py --diarize --diarization-device cpu  # force CPU for diarization
 python src/diarize.py <audio.mp3>                 # requires HF_TOKEN in .env
 
 # Tests
 pytest tests/                                     # all tests
 pytest tests/unit/test_diarize.py -v              # single file
 pytest tests/unit/test_diarize.py::TestMerge -v   # single class
+pytest tests/functional/ -v -m functional         # functional tests (requires fixtures + HF_TOKEN)
 
 # Linting
 ruff check src/ tests/
