@@ -4,8 +4,9 @@ import json
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import MagicMock, patch
 
-from src.diarize import load_transcript, merge, save_output
+from src.diarize import load_pipeline, load_transcript, merge, save_output
 
 
 class TestMerge(unittest.TestCase):
@@ -120,7 +121,7 @@ class TestSaveOutput(unittest.TestCase):
             original_dir = diarize_mod.TRANSCRIPTS_DIR
             try:
                 diarize_mod.TRANSCRIPTS_DIR = Path(tmpdir) / "transcripts"
-                txt_path, json_path = save_output(self.segments, audio_path)
+                json_path, txt_path = save_output(self.segments, audio_path)
                 self.assertTrue(txt_path.exists())
                 self.assertTrue(json_path.exists())
             finally:
@@ -134,7 +135,7 @@ class TestSaveOutput(unittest.TestCase):
             original_dir = diarize_mod.TRANSCRIPTS_DIR
             try:
                 diarize_mod.TRANSCRIPTS_DIR = Path(tmpdir) / "transcripts"
-                _, json_path = save_output(self.segments, audio_path)
+                json_path, _ = save_output(self.segments, audio_path)
                 data = json.loads(json_path.read_text(encoding="utf-8"))
                 self.assertEqual(len(data), 2)
                 self.assertEqual(data[0]["speaker"], "SPEAKER_00")
@@ -150,12 +151,26 @@ class TestSaveOutput(unittest.TestCase):
             original_dir = diarize_mod.TRANSCRIPTS_DIR
             try:
                 diarize_mod.TRANSCRIPTS_DIR = Path(tmpdir) / "transcripts"
-                txt_path, _ = save_output(self.segments, audio_path)
+                _, txt_path = save_output(self.segments, audio_path)
                 lines = txt_path.read_text(encoding="utf-8").splitlines()
                 self.assertEqual(lines[0], "[SPEAKER_00] Hello world")
                 self.assertEqual(lines[1], "[SPEAKER_01] Goodbye world")
             finally:
                 diarize_mod.TRANSCRIPTS_DIR = original_dir
+
+
+class TestLoadPipeline(unittest.TestCase):
+
+    @patch("torch.device")
+    @patch("pyannote.audio.Pipeline")
+    def test_segmentation_batch_size_set_to_one(self, mock_pipeline_cls, _mock_device):
+        mock_pipeline = MagicMock()
+        mock_pipeline.segmentation_batch_size = 32
+        mock_pipeline_cls.from_pretrained.return_value = mock_pipeline
+
+        result = load_pipeline("fake-token", "cpu")
+
+        self.assertEqual(result.segmentation_batch_size, 1)
 
 
 if __name__ == "__main__":
