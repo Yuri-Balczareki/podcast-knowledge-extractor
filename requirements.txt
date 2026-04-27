@@ -17,7 +17,14 @@ faster-whisper>=1.1
 pywhispercpp>=1.4
 
 # --- Phase 3: Speaker Diarization ---
-pyannote.audio>=3.3
+# Pinned <4.0: v4.x requires torchcodec which needs system FFmpeg (brew install ffmpeg),
+# broken on this machine. v3.x uses torchaudio instead.
+pyannote.audio>=3.3,<4.0
+soundfile>=0.13
+# Pinned to stay compatible with pyannote.audio 3.x
+huggingface_hub>=0.19,<0.24
+torch>=2.5,<2.6
+torchaudio>=2.5,<2.6
 
 # --- Phase 4: Indexing & Vector Store ---
 chromadb>=0.5
@@ -34,5 +41,6 @@ streamlit>=1.40
 jiwer>=3.0
 
 # --- Dev Tools ---
-pytest>=8.0
-ruff>=0.8
+pytest
+ruff
+python-dotenv

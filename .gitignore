@@ -31,3 +31,10 @@ build/
 
 .claude
 
+data/transcripts
+data/logs
+data/audio
+data/comparisons_large
+
+# Downloaded feeds
+*.xml
