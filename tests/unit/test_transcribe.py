@@ -87,7 +87,7 @@ class TestSaveOutput(unittest.TestCase):
             original_dir = transcribe_mod.TRANSCRIPTS_DIR
             try:
                 transcribe_mod.TRANSCRIPTS_DIR = Path(tmpdir) / "transcripts"
-                txt_path, json_path = save_output(self.sample_result, audio_path)
+                json_path, txt_path = save_output(self.sample_result, audio_path)
                 self.assertTrue(txt_path.exists())
                 self.assertTrue(json_path.exists())
             finally:
@@ -99,7 +99,7 @@ class TestSaveOutput(unittest.TestCase):
             original_dir = transcribe_mod.TRANSCRIPTS_DIR
             try:
                 transcribe_mod.TRANSCRIPTS_DIR = Path(tmpdir) / "transcripts"
-                txt_path, _ = save_output(self.sample_result, audio_path)
+                _, txt_path = save_output(self.sample_result, audio_path)
                 content = txt_path.read_text(encoding="utf-8")
                 self.assertEqual(content, "Hello world")
             finally:
@@ -111,7 +111,7 @@ class TestSaveOutput(unittest.TestCase):
             original_dir = transcribe_mod.TRANSCRIPTS_DIR
             try:
                 transcribe_mod.TRANSCRIPTS_DIR = Path(tmpdir) / "transcripts"
-                _, json_path = save_output(self.sample_result, audio_path)
+                json_path, _ = save_output(self.sample_result, audio_path)
                 data = json.loads(json_path.read_text(encoding="utf-8"))
                 self.assertEqual(len(data), 2)
                 self.assertAlmostEqual(data[0]["start"], 0.0, places=5)
@@ -131,7 +131,7 @@ class TestSaveOutput(unittest.TestCase):
             original_dir = transcribe_mod.TRANSCRIPTS_DIR
             try:
                 transcribe_mod.TRANSCRIPTS_DIR = Path(tmpdir) / "transcripts"
-                _, json_path = save_output(result_with_extras, audio_path)
+                json_path, _ = save_output(result_with_extras, audio_path)
                 data = json.loads(json_path.read_text(encoding="utf-8"))
                 self.assertEqual(set(data[0].keys()), {"start", "end", "text"})
             finally:
@@ -143,7 +143,7 @@ class TestSaveOutput(unittest.TestCase):
             original_dir = transcribe_mod.TRANSCRIPTS_DIR
             try:
                 transcribe_mod.TRANSCRIPTS_DIR = Path(tmpdir) / "transcripts"
-                txt_path, json_path = save_output(self.sample_result, audio_path)
+                json_path, txt_path = save_output(self.sample_result, audio_path)
                 self.assertEqual(txt_path.name, "episode-42.txt")
                 self.assertEqual(json_path.name, "episode-42.json")
             finally:
@@ -160,7 +160,7 @@ class TestSaveOutput(unittest.TestCase):
             original_dir = transcribe_mod.TRANSCRIPTS_DIR
             try:
                 transcribe_mod.TRANSCRIPTS_DIR = Path(tmpdir) / "transcripts"
-                txt_path, json_path = save_output(result, audio_path)
+                json_path, txt_path = save_output(result, audio_path)
                 self.assertIn("açafrão", txt_path.read_text(encoding="utf-8"))
                 json_content = json_path.read_text(encoding="utf-8")
                 self.assertIn("açafrão", json_content)
@@ -215,7 +215,7 @@ class TestTranscribeFasterWhisper(unittest.TestCase):
     def _run_with_segments(self, mock_segments, info_language="pt"):
         mock_fw = MagicMock()
         mock_model = MagicMock()
-        mock_info = MagicMock(language=info_language)
+        mock_info = MagicMock(language=info_language, duration=120.0)
         mock_model.transcribe.return_value = (iter(mock_segments), mock_info)
         mock_fw.WhisperModel.return_value = mock_model
         with patch.dict("sys.modules", {"faster_whisper": mock_fw}):
