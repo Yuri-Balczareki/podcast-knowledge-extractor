@@ -1,0 +1,212 @@
+[
+  {
+    "start": 0.0,
+    "end": 7.0,
+    "text": "Você está ouvindo NerdCast, no Jovem Nerd.",
+    "speaker": "SPEAKER_04"
+  },
+  {
+    "start": 7.0,
+    "end": 17.0,
+    "text": "Just stop your crying, it's the sun at the time. We gotta get away from here.",
+    "speaker": "SPEAKER_03"
+  },
+  {
+    "start": 17.0,
+    "end": 22.0,
+    "text": "Lá, lá, lá, lá, Nerds! Aqui Alexandre Antônio do Jovem Nerd. Amém, amém, amém!",
+    "speaker": "SPEAKER_02"
+  },
+  {
+    "start": 22.0,
+    "end": 29.0,
+    "text": "Olá, pessoas! Aqui é Anderson Gaveta. Eu quero saber se as pessoas assistiriam o filme chamado Projeto Ave Maria.",
+    "speaker": "SPEAKER_01"
+  },
+  {
+    "start": 29.0,
+    "end": 32.0,
+    "text": "Caraca, no Brasil ia ser outra história, né?",
+    "speaker": "SPEAKER_02"
+  },
+  {
+    "start": 32.0,
+    "end": 37.0,
+    "text": "Aqui é Caticho Barcelos e todo mundo agora é fã de pedra e karaokê.",
+    "speaker": "SPEAKER_00"
+  },
+  {
+    "start": 37.0,
+    "end": 43.0,
+    "text": "Nossa, eu pensei no karaokê. No cinema eu falei: \"Meu Deus, agora eu quero cantar\".",
+    "speaker": "SPEAKER_02"
+  },
+  {
+    "start": 43.0,
+    "end": 45.0,
+    "text": "Olha só!",
+    "speaker": "SPEAKER_00"
+  },
+  {
+    "start": 45.0,
+    "end": 48.0,
+    "text": "Não, karaokê ainda sou o hater número um do Brasil.",
+    "speaker": "SPEAKER_01"
+  },
+  {
+    "start": 48.0,
+    "end": 54.0,
+    "text": "Aqui é Carlos Voutor e como diria o rock: \"O mundo não é um ar grande de arco-íris, é um lugar sujo, um lugar cruel,",
+    "speaker": "SPEAKER_03"
+  },
+  {
+    "start": 54.0,
+    "end": 58.0,
+    "text": "que não quer saber o quanto você é durão, vai botar você de joelhos e você vai ficar de joelhos pra sempre",
+    "speaker": "SPEAKER_03"
+  },
+  {
+    "start": 58.0,
+    "end": 63.0,
+    "text": "se você deixar. Você e eu, ninguém vai bater tão duro como a vida. Não se trata de bater duro,",
+    "speaker": "SPEAKER_03"
+  },
+  {
+    "start": 63.0,
+    "end": 68.0,
+    "text": "se trata de quanto você aguenta apanhar e seguir em frente, o quanto você é capaz de aguentar e continuar tentando.",
+    "speaker": "SPEAKER_03"
+  },
+  {
+    "start": 68.0,
+    "end": 69.0,
+    "text": "É assim que se consegue vencer.\"",
+    "speaker": "SPEAKER_03"
+  },
+  {
+    "start": 69.0,
+    "end": 71.0,
+    "text": "Porra, belo tradutor esse.",
+    "speaker": "SPEAKER_02"
+  },
+  {
+    "start": 71.0,
+    "end": 75.0,
+    "text": "Não, tô só no final. Statement.",
+    "speaker": "SPEAKER_04"
+  },
+  {
+    "start": 75.0,
+    "end": 77.0,
+    "text": "Ele é statement.",
+    "speaker": "SPEAKER_02"
+  },
+  {
+    "start": 77.0,
+    "end": 81.0,
+    "text": "Aqui é o Azaghal e eu gostei que esse filme validou tudo que eu gosto.",
+    "speaker": "SPEAKER_04"
+  },
+  {
+    "start": 81.0,
+    "end": 83.0,
+    "text": "O quê? Rock?",
+    "speaker": "SPEAKER_04"
+  },
+  {
+    "start": 83.0,
+    "end": 84.0,
+    "text": "Pedra, jóinha.",
+    "speaker": "SPEAKER_04"
+  },
+  {
+    "start": 84.0,
+    "end": 85.0,
+    "text": "Café, o tesouro.",
+    "speaker": "SPEAKER_04"
+  },
+  {
+    "start": 85.0,
+    "end": 86.0,
+    "text": "Jóinha!",
+    "speaker": "SPEAKER_04"
+  },
+  {
+    "start": 86.0,
+    "end": 87.0,
+    "text": "Jóinha!",
+    "speaker": "SPEAKER_04"
+  },
+  {
+    "start": 87.0,
+    "end": 89.0,
+    "text": "Azarock, porra!",
+    "speaker": "SPEAKER_04"
+  },
+  {
+    "start": 89.0,
+    "end": 90.0,
+    "text": "Azarock, porra!",
+    "speaker": "SPEAKER_04"
+  },
+  {
+    "start": 90.0,
+    "end": 95.0,
+    "text": "Eu não vejo a hora de imprimir um rock pra botar do lado do Azarock que eu tenho aqui.",
+    "speaker": "SPEAKER_04"
+  },
+  {
+    "start": 95.0,
+    "end": 96.0,
+    "text": "Exatamente.",
+    "speaker": "SPEAKER_04"
+  },
+  {
+    "start": 96.0,
+    "end": 102.0,
+    "text": "Muito bem, nerds! Ave Maria cheia de crazy!",
+    "speaker": "SPEAKER_02"
+  },
+  {
+    "start": 102.0,
+    "end": 107.0,
+    "text": "Não é possível, cara. O jovem nerd religioso chegou.",
+    "speaker": "SPEAKER_02"
+  },
+  {
+    "start": 107.0,
+    "end": 109.0,
+    "text": "Nossa, agora eu tenho um deus.",
+    "speaker": "SPEAKER_02"
+  },
+  {
+    "start": 109.0,
+    "end": 111.0,
+    "text": "Chama ainda e weird.",
+    "speaker": "SPEAKER_02"
+  },
+  {
+    "start": 111.0,
+    "end": 116.0,
+    "text": "É isso, gente. É isso. Vamos salvar...",
+    "speaker": "SPEAKER_02"
+  },
+  {
+    "start": 116.0,
+    "end": 118.18,
+    "text": "Cara, é uma frase que me tocou o coração",
+    "speaker": "SPEAKER_02"
+  },
+  {
+    "start": 118.18,
+    "end": 119.26,
+    "text": "em termos de uma...",
+    "speaker": "SPEAKER_02"
+  },
+  {
+    "start": 119.26,
+    "end": 120.0,
+    "text": "Minha paixão pela ficção.",
+    "speaker": "SPEAKER_02"
+  }
+]
